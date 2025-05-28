@@ -16,11 +16,11 @@ TILE_SIZE = 80
 level = open('assets/levels/level1.txt').read().splitlines()
 
 def player_respawn():
+    global player_x, player_y, player_velocity_x, player_velocity_y, on_ground
     player_x = 100
     player_y = 0
     player_velocity_x = 0
     player_velocity_y = 0
-    JUMP_VELOCITY = -30.0
     on_ground = False
 
 

@@ -1,6 +1,5 @@
 import pygame
-
-
+import enemyClass as Enemy
 
 # --- Initialization ---
 pygame.init()
@@ -13,18 +12,18 @@ clock = pygame.time.Clock()
 # --- Constants ---
 TILE_SIZE = 48
 PLAYER_WIDTH, PLAYER_HEIGHT = 48, 96
-ENEMY_WIDTH, ENEMY_HEIGHT = 48, 48
-PLAYER_ACCEL, PLAYER_FRICTION, PLAYER_MAX_SPEED = 30.0, 50.0, 15.0
-GRAVITY, JUMP_VELOCITY = 80.0, -30.0
-ENEMY_SPEED, ENEMY_JUMP_VELOCITY, ENEMY_GRAVITY = 5.0, -15.0, 80.0
-JUMP_LOOKAHEAD = 20
-LEFT_MARGIN = screen_width // 3
-RIGHT_MARGIN = screen_width * 2
-TOP_MARGIN = int(screen_height * 0.5)
-BOTTOM_MARGIN = int(screen_height * 0.75)
+PLAYER_ACCEL, PLAYER_FRICTION = 30.0, 50.0
+PLAYER_WALK_MAX_SPEED = 10.0
+PLAYER_RUN_MAX_SPEED = 13.0
+WALK_TO_RUN_TIME = 0.5  # seconds to start running
+GRAVITY, JUMP_VELOCITY = 80.0, -25.0
+LEFT_MARGIN = 600
+RIGHT_MARGIN = screen_width - 600
+TOP_MARGIN = 300
+BOTTOM_MARGIN = screen_height - 300
 
 # --- Level Loading ---
-with open('assets/levels/level1.txt') as f:
+with open('assets/levels/testLevel.lvl') as f:
     level = f.read().splitlines()
 
 def get_tile_at(x, y):
@@ -47,7 +46,7 @@ def draw_level(screen, level, camera_x, camera_y):
                 pygame.draw.rect(screen, color, rect)
 
 def is_way_down(enemy_x, direction):
-    tile_x = int((enemy_x + (ENEMY_WIDTH + 1 if direction > 0 else -1)) // TILE_SIZE)
+    tile_x = int((enemy_x + (32 + 1 if direction > 0 else -1)) // TILE_SIZE)
     for tile_y in range(len(level)):
         if is_solid(tile_x * TILE_SIZE, tile_y * TILE_SIZE):
             return True
@@ -64,12 +63,16 @@ player_x, player_y = 100, 0
 player_velocity_x, player_velocity_y = 0, 0
 on_ground = False
 
-enemy_x, enemy_y = player_x + 300, 0
-enemy_velocity_x, enemy_velocity_y = -ENEMY_SPEED, 0
-enemy_on_ground = False
+# --- Walk-to-run state ---
+walk_time = 0.0
+last_move_dir = 0  # -1 for left, 1 for right, 0 for idle
 
 # --- Main Game Loop ---
 running = True
+camera_x, camera_y = 0, 0
+
+testEnemy = Enemy.Enemy(300, 0, "small", direction=1)
+
 while running:
     dt = clock.tick(144) / 1000.0
 
@@ -87,12 +90,35 @@ while running:
     left_block = is_solid(player_x - 1, player_y + 1) or is_solid(player_x - 1, player_y + PLAYER_HEIGHT - 1)
     right_block = is_solid(player_x + PLAYER_WIDTH + 1, player_y + 1) or is_solid(player_x + PLAYER_WIDTH + 1, player_y + PLAYER_HEIGHT - 1)
 
+    move_dir = 0
+    if keys[pygame.K_RIGHT] and not right_block:
+        move_dir = 1
+    elif keys[pygame.K_LEFT] and not left_block:
+        move_dir = -1
+
+    # Walk-to-run timer logic
+    if move_dir != 0:
+        if move_dir == last_move_dir:
+            walk_time += dt
+        else:
+            walk_time = 0.0
+        last_move_dir = move_dir
+    else:
+        walk_time = 0.0
+        last_move_dir = 0
+
+    # Set max speed based on walk/run
+    if walk_time >= WALK_TO_RUN_TIME:
+        max_speed = PLAYER_RUN_MAX_SPEED
+    else:
+        max_speed = PLAYER_WALK_MAX_SPEED
+
     if keys[pygame.K_UP] and on_ground:
         player_velocity_y = JUMP_VELOCITY
         on_ground = False
-    if keys[pygame.K_RIGHT] and not right_block:
+    if move_dir == 1:
         player_velocity_x += PLAYER_ACCEL * dt
-    elif keys[pygame.K_LEFT] and not left_block:
+    elif move_dir == -1:
         player_velocity_x -= PLAYER_ACCEL * dt
     else:
         if player_velocity_x > 0:
@@ -100,7 +126,7 @@ while running:
         elif player_velocity_x < 0:
             player_velocity_x = min(0, player_velocity_x + PLAYER_FRICTION * dt)
 
-    player_velocity_x = max(-PLAYER_MAX_SPEED, min(PLAYER_MAX_SPEED, player_velocity_x))
+    player_velocity_x = max(-max_speed, min(max_speed, player_velocity_x))
     player_x += player_velocity_x * dt * 60
 
     # --- Player Wall Collision ---
@@ -122,46 +148,7 @@ while running:
     else:
         on_ground = False
 
-    camera_x = player_x - screen_width // 2 + PLAYER_WIDTH // 2
-    camera_y = player_y - screen_height // 2 + PLAYER_HEIGHT // 2
-
-    # --- Enemy AI ---
-    enemy_velocity_y += ENEMY_GRAVITY * dt
-    enemy_y += enemy_velocity_y * dt * 60
-
-    enemy_foot_y = enemy_y + ENEMY_HEIGHT
-    if is_solid(enemy_x + ENEMY_WIDTH // 2, enemy_foot_y):
-        enemy_y = (int(enemy_foot_y // TILE_SIZE)) * TILE_SIZE - ENEMY_HEIGHT
-        enemy_velocity_y = 0
-        enemy_on_ground = True
-    else:
-        enemy_on_ground = False
-
-    # Turn around if about to fall
-    if enemy_velocity_x > 0 and not is_way_down(enemy_x, 1) and enemy_on_ground:
-        enemy_velocity_x *= -1
-    elif enemy_velocity_x < 0 and not is_way_down(enemy_x, -1) and enemy_on_ground:
-        enemy_velocity_x *= -1
-
-    # Wall detection and jump
-    if enemy_velocity_x < 0:
-        ahead_x = enemy_x - JUMP_LOOKAHEAD
-        if (is_solid(ahead_x, enemy_y + 1) or is_solid(ahead_x, enemy_y + ENEMY_HEIGHT - 1)) and enemy_on_ground:
-            enemy_velocity_y = ENEMY_JUMP_VELOCITY
-            enemy_velocity_x = -ENEMY_SPEED
-    elif enemy_velocity_x > 0:
-        ahead_x = enemy_x + ENEMY_WIDTH + JUMP_LOOKAHEAD
-        if (is_solid(ahead_x, enemy_y + 1) or is_solid(ahead_x, enemy_y + ENEMY_HEIGHT - 1)) and enemy_on_ground:
-            enemy_velocity_y = ENEMY_JUMP_VELOCITY
-            enemy_velocity_x = ENEMY_SPEED
-
-    enemy_x += enemy_velocity_x * dt * 60
-
-    # --- Drawing Player ---
-    if player_x > camera_x + 300:
-        player_rect = pygame.Rect(screen_width - screen_width / 2, player_y - camera_y, PLAYER_WIDTH, PLAYER_HEIGHT)
-    else:
-        player_rect = pygame.Rect(player_x, player_y, PLAYER_WIDTH, PLAYER_HEIGHT)
+    testEnemy.moveEnemy(dt)
 
     # --- Camera logic: update BEFORE drawing and collision ---
     if player_x < camera_x + LEFT_MARGIN:
@@ -184,12 +171,12 @@ while running:
     screen.fill((0, 0, 0))
     draw_level(screen, level, camera_x, camera_y)
     player_rect = pygame.Rect(player_x - camera_x, player_y - camera_y, PLAYER_WIDTH, PLAYER_HEIGHT)
-    enemy_rect = pygame.Rect(enemy_x - camera_x, enemy_y - camera_y, ENEMY_WIDTH, ENEMY_HEIGHT)
+    enemyRect = testEnemy.enemyRect(camera_x, camera_y)
+    pygame.draw.rect(screen, (255, 0, 0), enemyRect)
     pygame.draw.rect(screen, (255, 200, 50), player_rect)
-    pygame.draw.rect(screen, (200, 50, 50), enemy_rect)
 
     # --- Collision: Player & Enemy ---
-    if player_rect.colliderect(enemy_rect):
+    if player_rect.colliderect(enemyRect):
         player_respawn()
 
     pygame.display.flip()

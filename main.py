@@ -23,7 +23,7 @@ TOP_MARGIN = 300
 BOTTOM_MARGIN = screen_height - 300
 
 # --- Level Loading ---
-with open('assets/levels/testLevel.lvl') as f:
+with open('assets/levels/level1-1.lvl') as f:
     level = f.read().splitlines()
 
 def get_tile_at(x, y):
@@ -74,7 +74,7 @@ camera_x, camera_y = 0, 0
 testEnemy = Enemy.Enemy(300, 0, "small", direction=1)
 
 while running:
-    dt = clock.tick(144) / 1000.0
+    dt = clock.tick(60) / 1000.0
 
     # --- Event Handling ---
     for event in pygame.event.get():
@@ -136,6 +136,12 @@ while running:
     if is_solid(player_x, player_y + 1) or is_solid(player_x, player_y + PLAYER_HEIGHT - 1):
         player_x = (int(player_x // TILE_SIZE) + 1) * TILE_SIZE
         player_velocity_x = 0
+
+    # --- Player Head Collision (only green blocks) ---
+    head_y = player_y
+    if get_tile_at(player_x + PLAYER_WIDTH // 2, head_y) == "g" and player_velocity_y < 0:
+        player_y = (int(head_y // TILE_SIZE) + 1) * TILE_SIZE
+        player_velocity_y = 0
 
     player_velocity_y += GRAVITY * dt
     player_y += player_velocity_y * dt * 60
